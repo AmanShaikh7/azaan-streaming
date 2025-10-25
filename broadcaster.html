@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🕌 Azaan Broadcaster</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-start {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-start:hover:not(:disabled) {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+        
+        .btn-stop {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-stop:hover:not(:disabled) {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .status-box {
+            background: #f3f4f6;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .status-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .live-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: #ef4444;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .listeners {
+            text-align: center;
+            font-size: 16px;
+            color: #666;
+            margin-top: 10px;
+        }
+        
+        .info-box {
+            background: #dbeafe;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #1e40af;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🕌 Azaan Broadcaster</h1>
+        
+        <div class="input-group">
+            <label for="masjidId">Masjid ID</label>
+            <input type="text" id="masjidId" placeholder="e.g., jama-masjid-mumbai" />
+        </div>
+        
+        <div class="button-group">
+            <button class="btn-start" id="startBtn" onclick="startBroadcast()">
+                🎙️ Start Azaan
+            </button>
+            <button class="btn-stop" id="stopBtn" onclick="stopBroadcast()" disabled>
+                ⏹️ Stop
+            </button>
+        </div>
+        
+        <div class="status-box">
+            <div class="status-text" id="status">
+                ⚪ Not Broadcasting
+            </div>
+            <div class="listeners" id="listeners">
+                👥 Listeners: 0
+            </div>
+        </div>
+        
+        <div class="info-box">
+            💡 <strong>Tip:</strong> Make sure your microphone is working and you have a stable internet connection.
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const SERVER_URL = 'http://localhost:5000';
+        const socket = io(SERVER_URL);
+        
+        let localStream;
+        let peerConnections = new Map();
+        let masjidId;
+
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        async function startBroadcast() {
+            masjidId = document.getElementById('masjidId').value.trim();
+            
+            if (!masjidId) {
+                alert('⚠️ Please enter Masjid ID');
+                return;
+            }
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 48000
+                    }
+                });
+
+                document.getElementById('status').innerHTML = 
+                    '<span class="live-indicator"></span>🔴 Broadcasting Live';
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+
+                socket.emit('start-broadcast', { masjidId });
+                console.log('Started broadcasting for:', masjidId);
+
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                alert('❌ Could not access microphone. Please check permissions.');
+            }
+        }
+
+        function stopBroadcast() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+
+            peerConnections.forEach(pc => pc.close());
+            peerConnections.clear();
+
+            socket.emit('stop-broadcast', { masjidId });
+
+            document.getElementById('status').innerHTML = '⚪ Not Broadcasting';
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            updateListenerCount();
+        }
+
+        socket.on('listener-joined', async ({ listenerId }) => {
+            console.log('New listener joined:', listenerId);
+            
+            const peerConnection = new RTCPeerConnection(configuration);
+            peerConnections.set(listenerId, peerConnection);
+
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', {
+                        to: listenerId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            socket.emit('offer', {
+                to: listenerId,
+                offer: offer
+            });
+
+            updateListenerCount();
+        });
+
+        socket.on('answer', async ({ from, answer }) => {
+            const peerConnection = peerConnections.get(from);
+            if (peerConnection) {
+                await peerConnection.setRemoteDescription(answer);
+            }
+        });
+
+        socket.on('ice-candidate', ({ from, candidate }) => {
+            const peerConnection = peerConnections.get(from);
+            if (peerConnection) {
+                peerConnection.addIceCandidate(candidate);
+            }
+        });
+
+        function updateListenerCount() {
+            document.getElementById('listeners').textContent = 
+                `👥 Listeners: ${peerConnections.size}`;
+        }
+
+        socket.on('error', (data) => {
+            alert('❌ Error: ' + data.message);
+        });
+    </script>
+</body>
+</html>

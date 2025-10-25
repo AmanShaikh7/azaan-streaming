@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🕌 Listen to Azaan</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-join {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .btn-join:hover:not(:disabled) {
+            background: #2563eb;
+            transform: translateY(-2px);
+        }
+        
+        .btn-leave {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-leave:hover:not(:disabled) {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .status-box {
+            background: #f3f4f6;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .status-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .audio-box {
+            background: #1f2937;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .audio-box.active {
+            display: block;
+        }
+        
+        audio {
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        .wave-animation {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+            margin-top: 10px;
+        }
+        
+        .bar {
+            width: 4px;
+            height: 20px;
+            background: #3b82f6;
+            border-radius: 2px;
+            animation: wave 1s ease-in-out infinite;
+        }
+        
+        .bar:nth-child(2) { animation-delay: 0.1s; }
+        .bar:nth-child(3) { animation-delay: 0.2s; }
+        .bar:nth-child(4) { animation-delay: 0.3s; }
+        .bar:nth-child(5) { animation-delay: 0.4s; }
+        
+        @keyframes wave {
+            0%, 100% { height: 20px; }
+            50% { height: 40px; }
+        }
+        
+        .info-box {
+            background: #dbeafe;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #1e40af;
+        }
+        
+        .live-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #10b981;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🕌 Listen to Azaan</h1>
+        
+        <div class="input-group">
+            <label for="masjidId">Enter Masjid ID</label>
+            <input type="text" id="masjidId" placeholder="e.g., jama-masjid-mumbai" />
+        </div>
+        
+        <div class="button-group">
+            <button class="btn-join" id="joinBtn" onclick="joinBroadcast()">
+                🔊 Join Broadcast
+            </button>
+            <button class="btn-leave" id="leaveBtn" onclick="leaveBroadcast()" disabled>
+                🔇 Leave
+            </button>
+        </div>
+        
+        <div class="status-box">
+            <div class="status-text" id="status">
+                ⚪ Not Connected
+            </div>
+        </div>
+        
+        <div class="audio-box" id="audioBox">
+            <div style="text-align: center; color: white; margin-bottom: 10px;">
+                <span class="live-dot"></span>
+                <strong>Playing Live Audio</strong>
+            </div>
+            <div class="wave-animation">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+            </div>
+            <audio id="audioPlayer" controls autoplay></audio>
+        </div>
+        
+        <div class="info-box">
+            💡 <strong>Tip:</strong> Use headphones for better audio quality. Make sure your device volume is up!
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const SERVER_URL = 'http://localhost:5000';
+        const socket = io(SERVER_URL);
+        
+        let peerConnection;
+        let masjidId;
+
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        async function joinBroadcast() {
+            masjidId = document.getElementById('masjidId').value.trim();
+            
+            if (!masjidId) {
+                alert('⚠️ Please enter Masjid ID');
+                return;
+            }
+
+            document.getElementById('status').textContent = '🔄 Connecting...';
+            document.getElementById('joinBtn').disabled = true;
+            
+            peerConnection = new RTCPeerConnection(configuration);
+
+            peerConnection.ontrack = (event) => {
+                console.log('Received audio stream');
+                const audioPlayer = document.getElementById('audioPlayer');
+                audioPlayer.srcObject = event.streams[0];
+                
+                document.getElementById('status').innerHTML = 
+                    '<span class="live-dot"></span>🔊 Connected - Playing Live';
+                document.getElementById('audioBox').classList.add('active');
+                document.getElementById('leaveBtn').disabled = false;
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', {
+                        to: null,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                console.log('Connection state:', peerConnection.connectionState);
+                if (peerConnection.connectionState === 'failed') {
+                    document.getElementById('status').textContent = 
+                        '❌ Connection Failed';
+                }
+            };
+
+            socket.emit('join-broadcast', { masjidId });
+        }
+
+        socket.on('offer', async ({ from, offer }) => {
+            console.log('Received offer from broadcaster');
+            
+            await peerConnection.setRemoteDescription(offer);
+            
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            socket.emit('answer', {
+                to: from,
+                answer: answer
+            });
+        });
+
+        socket.on('ice-candidate', ({ from, candidate }) => {
+            if (peerConnection && candidate) {
+                peerConnection.addIceCandidate(candidate);
+            }
+        });
+
+        socket.on('broadcast-stopped', () => {
+            document.getElementById('status').textContent = 
+                '⚪ Broadcast Ended';
+            leaveBroadcast();
+        });
+
+        socket.on('error', (data) => {
+            alert('❌ Error: ' + data.message);
+            document.getElementById('status').textContent = '❌ ' + data.message;
+            document.getElementById('joinBtn').disabled = false;
+        });
+
+        function leaveBroadcast() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            const audioPlayer = document.getElementById('audioPlayer');
+            audioPlayer.srcObject = null;
+            
+            document.getElementById('status').textContent = '⚪ Not Connected';
+            document.getElementById('audioBox').classList.remove('active');
+            document.getElementById('joinBtn').disabled = false;
+            document.getElementById('leaveBtn').disabled = true;
+            
+            if (masjidId) {
+                socket.emit('leave-broadcast', { masjidId });
+            }
+        }
+    </script>
+</body>
+</html>
