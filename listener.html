@@ -238,17 +238,20 @@
                 <span class="live-dot"></span>
                 <strong>Playing Live Audio</strong>
             </div>
-            <div class="wave-animation">
+            <div class="wave-animation" id="waveAnimation">
                 <div class="bar"></div>
                 <div class="bar"></div>
                 <div class="bar"></div>
                 <div class="bar"></div>
                 <div class="bar"></div>
             </div>
-            <audio id="audioPlayer" controls autoplay playsinline></audio>
+            <audio id="audioPlayer" controls autoplay playsinline preload="auto"></audio>
             <button class="manual-play-btn" id="manualPlayBtn" onclick="manualPlay()">
                 🔊 TAP HERE TO PLAY AUDIO
             </button>
+            <div style="text-align: center; color: white; font-size: 12px; margin-top: 10px;">
+                <div id="audioStatus">Waiting for audio...</div>
+            </div>
         </div>
         
         <div class="info-box">
@@ -480,16 +483,53 @@
             const audioPlayer = document.getElementById('audioPlayer');
             try {
                 audioPlayer.volume = 1.0;
+                audioPlayer.muted = false;
+                
+                console.log('Manual play - readyState:', audioPlayer.readyState);
+                debugLog('🎯 Manual play attempt');
+                
                 await audioPlayer.play();
                 console.log('✅ Manual play successful');
+                debugLog('✅ Manual play successful!');
+                
                 document.getElementById('manualPlayBtn').classList.remove('show');
                 document.getElementById('status').innerHTML = 
                     '<span class="live-dot"></span>🔊 Connected - Playing Live';
+                document.getElementById('audioStatus').textContent = 
+                    'Audio playing - paused: ' + audioPlayer.paused;
             } catch (error) {
                 console.error('Manual play failed:', error);
-                alert('⚠️ Unable to play audio. Please check your volume and try again.');
+                debugLog('❌ Manual play failed: ' + error.message);
+                alert('⚠️ Unable to play audio: ' + error.message);
             }
         }
+
+        // Monitor audio playback
+        const audioPlayer = document.getElementById('audioPlayer');
+        
+        audioPlayer.onplay = () => {
+            console.log('Audio play event fired');
+            debugLog('▶️ Audio play event');
+            document.getElementById('audioStatus').textContent = 'Playing...';
+        };
+        
+        audioPlayer.onpause = () => {
+            console.log('Audio pause event fired');
+            debugLog('⏸️ Audio pause event');
+            document.getElementById('audioStatus').textContent = 'Paused';
+        };
+        
+        audioPlayer.onplaying = () => {
+            console.log('Audio playing event fired');
+            debugLog('▶️ Audio playing event');
+            document.getElementById('audioStatus').textContent = 'Playing now!';
+        };
+        
+        audioPlayer.onerror = (e) => {
+            console.error('Audio error:', e, audioPlayer.error);
+            debugLog('❌ Audio error: ' + (audioPlayer.error ? audioPlayer.error.message : 'unknown'));
+            document.getElementById('audioStatus').textContent = 'Error: ' + (audioPlayer.error ? audioPlayer.error.message : 'unknown');
+        };
     </script>
 </body>
 </html>
