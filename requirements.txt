@@ -3,8 +3,3 @@ flask-socketio==5.3.5
 flask-cors==4.0.0
 eventlet==0.33.3
 gunicorn==21.2.0
-```
-
-**3. Procfile** (Create new file - no extension):
-```
-web: gunicorn --worker-class eventlet -w 1 server:app
