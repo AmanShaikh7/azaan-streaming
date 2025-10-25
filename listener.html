@@ -231,8 +231,15 @@
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
-        const SERVER_URL = 'http://azaan-streaming.onrender.com';
-        const socket = io(SERVER_URL);
+        const SERVER_URL = window.location.origin;  // Auto-detect server URL
+        console.log('Connecting to:', SERVER_URL);
+        
+        const socket = io(SERVER_URL, {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 5
+        });
         
         let peerConnection;
         let masjidId;
@@ -245,7 +252,18 @@
         };
 
         socket.on('connect', () => {
-            console.log('Connected to server');
+            console.log('✅ Connected to server successfully!');
+            console.log('Socket ID:', socket.id);
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('❌ Connection error:', error);
+            document.getElementById('status').textContent = '❌ Connection Error: ' + error.message;
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('Disconnected:', reason);
+            document.getElementById('status').textContent = '⚠️ Disconnected: ' + reason;
         });
 
         async function joinBroadcast() {
