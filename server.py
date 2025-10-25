@@ -1,6 +1,6 @@
 """
-Azaan Live Streaming - Python WebRTC Signaling Server
-Install: pip install flask flask-socketio flask-cors eventlet
+Azaan Live Streaming - Python WebRTC Signaling Server (Render Compatible)
+Install: pip install flask flask-socketio flask-cors simple-websocket
 Run: python server.py
 """
 
@@ -13,7 +13,16 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'azaan-secret-key-2024'
 CORS(app)
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=True, engineio_logger=False)
+# Use threading mode - works on all Python versions including 3.13
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*",
+    async_mode='threading',
+    logger=True,
+    engineio_logger=False,
+    ping_timeout=60,
+    ping_interval=25
+)
 
 # Store active broadcasts {masjid_id: broadcaster_socket_id}
 active_broadcasts = {}
@@ -25,6 +34,7 @@ def index():
     <html>
     <head>
         <title>Azaan Streaming Server</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -49,6 +59,7 @@ def index():
                 border-radius: 8px;
                 display: inline-block;
                 margin: 20px 0;
+                font-weight: 600;
             }
             .link-box {
                 background: #f3f4f6;
@@ -65,6 +76,7 @@ def index():
                 border-radius: 8px;
                 margin: 10px 0;
                 font-weight: 600;
+                transition: background 0.3s;
             }
             a:hover { background: #2563eb; }
             .info { 
@@ -73,6 +85,13 @@ def index():
                 border-radius: 8px;
                 margin-top: 20px;
                 color: #1e40af;
+                font-size: 14px;
+            }
+            code {
+                background: white;
+                padding: 5px 10px;
+                border-radius: 4px;
+                font-family: monospace;
             }
         </style>
     </head>
@@ -80,47 +99,67 @@ def index():
         <div class="container">
             <h1>🕌 Azaan Streaming Server</h1>
             <div class="status">✅ Server is Running</div>
-            <p>Active Broadcasts: <strong>{{ active_count }}</strong></p>
+            <p style="color: #666;">Active Broadcasts: <strong>{{ active_count }}</strong></p>
             
             <div class="link-box">
-                <h3>Access Pages:</h3>
+                <h3 style="margin-top: 0;">Access Pages:</h3>
                 <a href="/broadcaster">📡 Broadcaster Page (For Masjid)</a>
                 <a href="/listener">🔊 Listener Page (For Users)</a>
             </div>
             
             <div class="info">
-                <strong>Server URL:</strong><br>
-                <code style="background: white; padding: 5px 10px; border-radius: 4px;">
-                    {{ server_url }}
-                </code>
+                <strong>📌 Server URL:</strong><br>
+                <code>{{ server_url }}</code><br>
+                <small>Use this URL in your HTML files</small>
             </div>
         </div>
     </body>
     </html>
-    """, active_count=len(active_broadcasts), server_url=request.url_root)
+    """, active_count=len(active_broadcasts), server_url=request.url_root.rstrip('/'))
 
 @app.route('/broadcaster')
 def broadcaster():
     try:
         return send_from_directory('.', 'broadcaster.html')
     except:
-        return "broadcaster.html not found. Please add it to the repository."
+        return """
+        <html><body style='font-family: Arial; padding: 50px; text-align: center;'>
+        <h1>⚠️ broadcaster.html not found</h1>
+        <p>Please add broadcaster.html to your repository root.</p>
+        </body></html>
+        """
 
 @app.route('/listener')
 def listener():
     try:
         return send_from_directory('.', 'listener.html')
     except:
-        return "listener.html not found. Please add it to the repository."
+        return """
+        <html><body style='font-family: Arial; padding: 50px; text-align: center;'>
+        <h1>⚠️ listener.html not found</h1>
+        <p>Please add listener.html to your repository root.</p>
+        </body></html>
+        """
+
+@app.route('/health')
+def health():
+    return {
+        "status": "ok", 
+        "active_broadcasts": len(active_broadcasts),
+        "async_mode": socketio.async_mode
+    }
 
 @app.route('/active-broadcasts')
 def get_active_broadcasts():
-    return {"broadcasts": list(active_broadcasts.keys()), "count": len(active_broadcasts)}
+    return {
+        "broadcasts": list(active_broadcasts.keys()), 
+        "count": len(active_broadcasts)
+    }
 
 @socketio.on('connect')
 def handle_connect():
     print(f'Client connected: {request.sid}')
-    emit('connected', {'sid': request.sid})
+    emit('connected', {'status': 'connected', 'sid': request.sid})
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -135,6 +174,7 @@ def handle_disconnect():
     
     for masjid_id in masjids_to_remove:
         del active_broadcasts[masjid_id]
+        print(f'Removed broadcast for masjid: {masjid_id}')
 
 @socketio.on('start-broadcast')
 def handle_start_broadcast(data):
@@ -147,9 +187,8 @@ def handle_start_broadcast(data):
     active_broadcasts[masjid_id] = request.sid
     join_room(f'masjid-{masjid_id}')
     
-    print(f'Broadcast started for masjid: {masjid_id}')
+    print(f'Broadcast started for masjid: {masjid_id} by {request.sid}')
     
-    # Notify all clients that broadcast started
     emit('broadcast-started', {'masjidId': masjid_id}, broadcast=True)
     emit('broadcast-status', {'status': 'live', 'masjidId': masjid_id})
 
@@ -177,14 +216,13 @@ def handle_join_broadcast(data):
     if broadcaster_id:
         print(f'Listener {request.sid} joined masjid: {masjid_id}')
         
-        # Tell broadcaster about new listener
         emit('listener-joined', {
             'listenerId': request.sid
         }, room=broadcaster_id)
         
         emit('joined-broadcast', {'masjidId': masjid_id})
     else:
-        emit('error', {'message': 'Broadcast not active'})
+        emit('error', {'message': 'Broadcast not active for this masjid'})
 
 @socketio.on('leave-broadcast')
 def handle_leave_broadcast(data):
@@ -193,7 +231,6 @@ def handle_leave_broadcast(data):
         leave_room(f'masjid-{masjid_id}')
         print(f'Listener {request.sid} left masjid: {masjid_id}')
 
-# WebRTC Signaling Messages
 @socketio.on('offer')
 def handle_offer(data):
     to_sid = data.get('to')
@@ -228,9 +265,20 @@ def handle_ice_candidate(data):
         }, room=to_sid)
 
 if __name__ == '__main__':
+    # Get port from environment variable (Render provides this)
+    port = int(os.environ.get('PORT', 5000))
+    
     print("="*50)
     print("🕌 Azaan Streaming Server Starting...")
-    print("Server will run on: http://localhost:5000")
+    print(f"Port: {port}")
+    print(f"Async Mode: {socketio.async_mode}")
     print("="*50)
     
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    # Run with socketio
+    socketio.run(
+        app, 
+        host='0.0.0.0', 
+        port=port, 
+        debug=False,
+        allow_unsafe_werkzeug=True
+    )
