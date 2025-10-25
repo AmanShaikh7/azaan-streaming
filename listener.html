@@ -287,10 +287,7 @@
 
         const configuration = {
             iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun.services.mozilla.com' },
-                // Multiple TURN server options
+                // Try relay-only for mobile
                 {
                     urls: 'turn:openrelay.metered.ca:80',
                     username: 'openrelayproject',
@@ -306,17 +303,21 @@
                     username: 'openrelayproject',
                     credential: 'openrelayproject'
                 },
-                // Backup TURN servers
                 {
                     urls: 'turn:relay1.expressturn.com:3478',
                     username: 'efNK6RMY8KWT7MA1HD',
                     credential: 'EBv0co5HRkqRX5R3yoXd27ks'
-                }
+                },
+                // STUN as backup
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
             ],
-            iceCandidatePoolSize: 10,
-            iceTransportPolicy: 'all',  // Try all connection types (direct + relay)
+            iceCandidatePoolSize: 20,  // Increased for more candidates
+            iceTransportPolicy: 'all',  // Try all types
             bundlePolicy: 'max-bundle',
-            rtcpMuxPolicy: 'require'
+            rtcpMuxPolicy: 'require',
+            // Add these for better mobile compatibility
+            sdpSemantics: 'unified-plan'
         };
 
         socket.on('connect', () => {
