@@ -286,7 +286,8 @@
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                // Free TURN servers for relay
+                { urls: 'stun:stun.services.mozilla.com' },
+                // Multiple TURN server options
                 {
                     urls: 'turn:openrelay.metered.ca:80',
                     username: 'openrelayproject',
@@ -301,9 +302,18 @@
                     urls: 'turn:openrelay.metered.ca:443?transport=tcp',
                     username: 'openrelayproject',
                     credential: 'openrelayproject'
+                },
+                // Backup TURN servers
+                {
+                    urls: 'turn:relay1.expressturn.com:3478',
+                    username: 'efNK6RMY8KWT7MA1HD',
+                    credential: 'EBv0co5HRkqRX5R3yoXd27ks'
                 }
             ],
-            iceCandidatePoolSize: 10
+            iceCandidatePoolSize: 10,
+            iceTransportPolicy: 'all',  // Try all connection types (direct + relay)
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require'
         };
 
         socket.on('connect', () => {
