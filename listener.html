@@ -254,10 +254,21 @@
         <div class="info-box">
             💡 <strong>Tip:</strong> Use headphones for better audio quality. Make sure your device volume is up!
         </div>
+        
+        <div style="margin-top: 20px; padding: 15px; background: #f3f4f6; border-radius: 8px; font-size: 12px; font-family: monospace;">
+            <strong>Debug Info:</strong>
+            <div id="debugInfo">Ready to connect...</div>
+        </div>
     </div>
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
+        const debugLog = (msg) => {
+            console.log(msg);
+            const debugDiv = document.getElementById('debugInfo');
+            debugDiv.innerHTML += '<br>' + new Date().toLocaleTimeString() + ': ' + msg;
+            debugDiv.scrollTop = debugDiv.scrollHeight;
+        };
         const SERVER_URL = window.location.origin;  // Auto-detect server URL
         console.log('Connecting to:', SERVER_URL);
         
@@ -281,16 +292,19 @@
         socket.on('connect', () => {
             console.log('✅ Connected to server successfully!');
             console.log('Socket ID:', socket.id);
+            debugLog('✅ Connected to server: ' + socket.id);
         });
 
         socket.on('connect_error', (error) => {
             console.error('❌ Connection error:', error);
             document.getElementById('status').textContent = '❌ Connection Error: ' + error.message;
+            debugLog('❌ Connection error: ' + error.message);
         });
 
         socket.on('disconnect', (reason) => {
             console.log('Disconnected:', reason);
             document.getElementById('status').textContent = '⚠️ Disconnected: ' + reason;
+            debugLog('⚠️ Disconnected: ' + reason);
         });
 
         async function joinBroadcast() {
@@ -301,36 +315,62 @@
                 return;
             }
 
+            console.log('Attempting to join broadcast:', masjidId);
             document.getElementById('status').textContent = '🔄 Connecting...';
             document.getElementById('joinBtn').disabled = true;
+            debugLog('🔄 Joining broadcast: ' + masjidId);
             
             peerConnection = new RTCPeerConnection(configuration);
 
+            // Debug: Log connection state changes
+            peerConnection.onconnectionstatechange = () => {
+                console.log('🔗 Connection state:', peerConnection.connectionState);
+                debugLog('🔗 Connection state: ' + peerConnection.connectionState);
+                if (peerConnection.connectionState === 'connected') {
+                    console.log('✅ WebRTC connection established!');
+                    debugLog('✅ WebRTC connected!');
+                }
+            };
+
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log('🧊 ICE connection state:', peerConnection.iceConnectionState);
+                debugLog('🧊 ICE state: ' + peerConnection.iceConnectionState);
+            };
+
             peerConnection.ontrack = async (event) => {
-                console.log('Received audio stream');
+                console.log('🎵 Received audio track!');
+                console.log('Stream:', event.streams[0]);
+                console.log('Tracks:', event.streams[0].getTracks());
+                debugLog('🎵 Audio track received!');
+                
                 const audioPlayer = document.getElementById('audioPlayer');
                 audioPlayer.srcObject = event.streams[0];
+                
+                // Show audio box immediately
+                document.getElementById('audioBox').classList.add('active');
+                debugLog('📦 Audio player shown');
                 
                 // Critical for mobile: Try to play and handle errors
                 try {
                     // Set volume to maximum
                     audioPlayer.volume = 1.0;
                     
-                    // Attempt to play
+                    console.log('🔊 Attempting to play audio...');
+                    debugLog('🔊 Attempting autoplay...');
                     await audioPlayer.play();
                     console.log('✅ Audio playback started successfully');
+                    debugLog('✅ Audio playing!');
                     
                     document.getElementById('status').innerHTML = 
                         '<span class="live-dot"></span>🔊 Connected - Playing Live';
-                    document.getElementById('audioBox').classList.add('active');
                     document.getElementById('leaveBtn').disabled = false;
                 } catch (error) {
-                    console.error('Autoplay prevented:', error);
+                    console.error('❌ Autoplay prevented:', error);
+                    debugLog('⚠️ Autoplay blocked - tap play button');
                     
                     // Show manual play button
                     document.getElementById('status').innerHTML = 
                         '⚠️ Tap "Play Audio" button below';
-                    document.getElementById('audioBox').classList.add('active');
                     document.getElementById('manualPlayBtn').classList.add('show');
                     document.getElementById('leaveBtn').disabled = false;
                 }
