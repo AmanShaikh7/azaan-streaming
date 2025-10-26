@@ -1,5 +1,7 @@
 """
-Azaan Live Streaming - Python WebRTC Signaling Server (Render Compatible)
+Azaan Live Streaming - Server-Based Audio Streaming (No WebRTC)
+Audio flows through the server instead of P2P
+
 Install: pip install flask flask-socketio flask-cors simple-websocket
 Run: python server.py
 """
@@ -8,12 +10,13 @@ from flask import Flask, request, send_from_directory, render_template_string
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_cors import CORS
 import os
+import base64
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'azaan-secret-key-2024'
 CORS(app)
 
-# Use threading mode - works on all Python versions including 3.13
+# Use threading mode for compatibility
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*",
@@ -21,11 +24,14 @@ socketio = SocketIO(
     logger=True,
     engineio_logger=False,
     ping_timeout=60,
-    ping_interval=25
+    ping_interval=25,
+    max_http_buffer_size=1000000  # 1MB for audio chunks
 )
 
 # Store active broadcasts {masjid_id: broadcaster_socket_id}
 active_broadcasts = {}
+# Store listener counts
+listener_counts = {}
 
 @app.route('/')
 def index():
@@ -93,13 +99,23 @@ def index():
                 border-radius: 4px;
                 font-family: monospace;
             }
+            .stat {
+                background: #f0f0f0;
+                padding: 10px;
+                border-radius: 5px;
+                margin: 10px 0;
+            }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>🕌 Azaan Streaming Server</h1>
             <div class="status">✅ Server is Running</div>
-            <p style="color: #666;">Active Broadcasts: <strong>{{ active_count }}</strong></p>
+            <div class="stat">
+                <strong>Streaming Mode:</strong> Server-Based (No P2P)<br>
+                <strong>Active Broadcasts:</strong> {{ active_count }}<br>
+                <strong>Architecture:</strong> Audio flows through server
+            </div>
             
             <div class="link-box">
                 <h3 style="margin-top: 0;">Access Pages:</h3>
@@ -110,7 +126,7 @@ def index():
             <div class="info">
                 <strong>📌 Server URL:</strong><br>
                 <code>{{ server_url }}</code><br>
-                <small>Use this URL in your HTML files</small>
+                <small>Works on all networks - no TURN needed!</small>
             </div>
         </div>
     </body>
@@ -146,6 +162,7 @@ def health():
     return {
         "status": "ok", 
         "active_broadcasts": len(active_broadcasts),
+        "streaming_mode": "server-based",
         "async_mode": socketio.async_mode
     }
 
@@ -174,6 +191,8 @@ def handle_disconnect():
     
     for masjid_id in masjids_to_remove:
         del active_broadcasts[masjid_id]
+        if masjid_id in listener_counts:
+            del listener_counts[masjid_id]
         print(f'Removed broadcast for masjid: {masjid_id}')
 
 @socketio.on('start-broadcast')
@@ -185,6 +204,7 @@ def handle_start_broadcast(data):
         return
     
     active_broadcasts[masjid_id] = request.sid
+    listener_counts[masjid_id] = 0
     join_room(f'masjid-{masjid_id}')
     
     print(f'Broadcast started for masjid: {masjid_id} by {request.sid}')
@@ -198,6 +218,8 @@ def handle_stop_broadcast(data):
     
     if masjid_id in active_broadcasts:
         del active_broadcasts[masjid_id]
+        if masjid_id in listener_counts:
+            del listener_counts[masjid_id]
         emit('broadcast-stopped', room=f'masjid-{masjid_id}')
         print(f'Broadcast stopped for masjid: {masjid_id}')
 
@@ -214,13 +236,17 @@ def handle_join_broadcast(data):
     broadcaster_id = active_broadcasts.get(masjid_id)
     
     if broadcaster_id:
+        # Update listener count
+        listener_counts[masjid_id] = listener_counts.get(masjid_id, 0) + 1
+        
         print(f'Listener {request.sid} joined masjid: {masjid_id}')
         
-        emit('listener-joined', {
-            'listenerId': request.sid
+        # Tell broadcaster about listener count
+        emit('listener-count', {
+            'count': listener_counts[masjid_id]
         }, room=broadcaster_id)
         
-        emit('joined-broadcast', {'masjidId': masjid_id})
+        emit('joined-broadcast', {'masjidId': masjid_id, 'success': True})
     else:
         emit('error', {'message': 'Broadcast not active for this masjid'})
 
@@ -229,40 +255,35 @@ def handle_leave_broadcast(data):
     masjid_id = data.get('masjidId')
     if masjid_id:
         leave_room(f'masjid-{masjid_id}')
+        
+        # Update listener count
+        if masjid_id in listener_counts and listener_counts[masjid_id] > 0:
+            listener_counts[masjid_id] -= 1
+            
+            # Notify broadcaster
+            broadcaster_id = active_broadcasts.get(masjid_id)
+            if broadcaster_id:
+                emit('listener-count', {
+                    'count': listener_counts[masjid_id]
+                }, room=broadcaster_id)
+        
         print(f'Listener {request.sid} left masjid: {masjid_id}')
 
-@socketio.on('offer')
-def handle_offer(data):
-    to_sid = data.get('to')
-    offer = data.get('offer')
+# NEW: Audio streaming through server
+@socketio.on('audio-data')
+def handle_audio_data(data):
+    """
+    Broadcaster sends audio chunks, server broadcasts to all listeners
+    """
+    masjid_id = data.get('masjidId')
+    audio_chunk = data.get('audio')
     
-    if to_sid and offer:
-        emit('offer', {
-            'from': request.sid,
-            'offer': offer
-        }, room=to_sid)
-
-@socketio.on('answer')
-def handle_answer(data):
-    to_sid = data.get('to')
-    answer = data.get('answer')
-    
-    if to_sid and answer:
-        emit('answer', {
-            'from': request.sid,
-            'answer': answer
-        }, room=to_sid)
-
-@socketio.on('ice-candidate')
-def handle_ice_candidate(data):
-    to_sid = data.get('to')
-    candidate = data.get('candidate')
-    
-    if to_sid and candidate:
-        emit('ice-candidate', {
-            'from': request.sid,
-            'candidate': candidate
-        }, room=to_sid)
+    if masjid_id and audio_chunk:
+        # Broadcast audio to all listeners in this room
+        emit('audio-stream', {
+            'audio': audio_chunk,
+            'timestamp': data.get('timestamp', 0)
+        }, room=f'masjid-{masjid_id}', include_self=False)
 
 if __name__ == '__main__':
     # Get port from environment variable (Render provides this)
@@ -271,6 +292,7 @@ if __name__ == '__main__':
     print("="*50)
     print("🕌 Azaan Streaming Server Starting...")
     print(f"Port: {port}")
+    print("Mode: Server-Based Audio Streaming (No WebRTC)")
     print(f"Async Mode: {socketio.async_mode}")
     print("="*50)
     

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🕌 Azaan Broadcaster</title>
+    <title>🕌 Azaan Broadcaster (Server Mode)</title>
     <style>
         * {
             margin: 0;
@@ -33,8 +33,15 @@
         h1 {
             text-align: center;
             color: #333;
-            margin-bottom: 30px;
+            margin-bottom: 10px;
             font-size: 28px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
         }
         
         .input-group {
@@ -153,6 +160,7 @@
 <body>
     <div class="container">
         <h1>🕌 Azaan Broadcaster</h1>
+        <div class="subtitle">Server-Based Mode (No WebRTC needed)</div>
         
         <div class="input-group">
             <label for="masjidId">Masjid ID</label>
@@ -178,72 +186,31 @@
         </div>
         
         <div class="info-box">
-            💡 <strong>Tip:</strong> Make sure your microphone is working and you have a stable internet connection.
+            💡 <strong>Server Mode:</strong> Audio streams through the server. Works on all networks!
         </div>
     </div>
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
-        const SERVER_URL = window.location.origin;  // Auto-detect server URL
-        console.log('Connecting to:', SERVER_URL);
-        
+        const SERVER_URL = window.location.origin;
         const socket = io(SERVER_URL, {
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionAttempts: 5
+            transports: ['websocket', 'polling']
         });
         
         let localStream;
-        let peerConnections = new Map();
+        let audioContext;
+        let mediaStreamSource;
+        let processor;
         let masjidId;
-
-        const configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun.services.mozilla.com' },
-                // Multiple TURN server options
-                {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                // Backup TURN servers
-                {
-                    urls: 'turn:relay1.expressturn.com:3478',
-                    username: 'efNK6RMY8KWT7MA1HD',
-                    credential: 'EBv0co5HRkqRX5R3yoXd27ks'
-                }
-            ],
-            iceCandidatePoolSize: 10,
-            iceTransportPolicy: 'all',  // Try all connection types (direct + relay)
-            bundlePolicy: 'max-bundle',
-            rtcpMuxPolicy: 'require'
-        };
+        let isStreaming = false;
 
         socket.on('connect', () => {
-            console.log('✅ Connected to server successfully!');
-            console.log('Socket ID:', socket.id);
+            console.log('✅ Connected to server');
         });
 
-        socket.on('connect_error', (error) => {
-            console.error('❌ Connection error:', error);
-            alert('Connection error: ' + error.message);
-        });
-
-        socket.on('disconnect', (reason) => {
-            console.log('Disconnected:', reason);
+        socket.on('listener-count', (data) => {
+            document.getElementById('listeners').textContent = 
+                `👥 Listeners: ${data.count}`;
         });
 
         async function startBroadcast() {
@@ -255,22 +222,57 @@
             }
 
             try {
-                // Request audio with optimal settings for streaming
+                // Get microphone access
                 localStream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
                         echoCancellation: true,
                         noiseSuppression: true,
                         autoGainControl: true,
-                        sampleRate: 48000,
-                        channelCount: 1,  // Mono for better compatibility
-                        sampleSize: 16
-                    },
-                    video: false
+                        sampleRate: 16000,  // Lower for better streaming
+                        channelCount: 1
+                    }
                 });
 
                 console.log('✅ Microphone access granted');
-                console.log('Audio tracks:', localStream.getAudioTracks().length);
-                console.log('Track settings:', localStream.getAudioTracks()[0].getSettings());
+
+                // Create audio context for processing
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 16000
+                });
+                
+                mediaStreamSource = audioContext.createMediaStreamSource(localStream);
+                
+                // Create script processor (will be replaced by AudioWorklet in future)
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                processor.onaudioprocess = (e) => {
+                    if (!isStreaming) return;
+                    
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    
+                    // Convert Float32Array to Int16Array for smaller size
+                    const int16Data = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Convert to base64 for transmission
+                    const audioBase64 = arrayBufferToBase64(int16Data.buffer);
+                    
+                    // Send audio chunk to server
+                    socket.emit('audio-data', {
+                        masjidId: masjidId,
+                        audio: audioBase64,
+                        timestamp: Date.now(),
+                        sampleRate: 16000
+                    });
+                };
+                
+                mediaStreamSource.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                isStreaming = true;
 
                 document.getElementById('status').innerHTML = 
                     '<span class="live-indicator"></span>🔴 Broadcasting Live';
@@ -287,113 +289,55 @@
         }
 
         function stopBroadcast() {
+            isStreaming = false;
+            
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+            
+            if (mediaStreamSource) {
+                mediaStreamSource.disconnect();
+                mediaStreamSource = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
             }
-
-            peerConnections.forEach(pc => pc.close());
-            peerConnections.clear();
 
             socket.emit('stop-broadcast', { masjidId });
 
             document.getElementById('status').innerHTML = '⚪ Not Broadcasting';
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
-            updateListenerCount();
+            document.getElementById('listeners').textContent = 'Listeners: 0';
         }
 
-        socket.on('listener-joined', async ({ listenerId }) => {
-            console.log('New listener joined:', listenerId);
-            
-            const peerConnection = new RTCPeerConnection(configuration);
-            peerConnections.set(listenerId, peerConnection);
-
-            // CRITICAL: Add audio tracks with proper constraints
-            if (localStream) {
-                localStream.getTracks().forEach(track => {
-                    console.log('Adding track:', track.kind, track.label);
-                    const sender = peerConnection.addTrack(track, localStream);
-                    
-                    // Set encoding parameters for better mobile compatibility
-                    if (track.kind === 'audio' && sender.setParameters) {
-                        const params = sender.getParameters();
-                        if (!params.encodings) {
-                            params.encodings = [{}];
-                        }
-                        params.encodings[0].maxBitrate = 128000; // 128kbps for good quality
-                        sender.setParameters(params).catch(e => console.log('Set params failed:', e));
-                    }
-                });
-                console.log('All tracks added. Total tracks:', localStream.getTracks().length);
-            } else {
-                console.error('❌ No local stream available!');
-                return;
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
             }
-
-            // Handle ICE candidates
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    console.log('Sending ICE candidate type:', event.candidate.type);
-                    socket.emit('ice-candidate', {
-                        to: listenerId,
-                        candidate: event.candidate
-                    });
-                }
-            };
-
-            // Monitor connection state
-            peerConnection.onconnectionstatechange = () => {
-                console.log('Connection to', listenerId, ':', peerConnection.connectionState);
-            };
-
-            peerConnection.oniceconnectionstatechange = () => {
-                console.log('ICE connection to', listenerId, ':', peerConnection.iceConnectionState);
-            };
-
-            // Create and send offer with proper constraints
-            try {
-                const offer = await peerConnection.createOffer({
-                    offerToReceiveAudio: false,  // We're only sending, not receiving
-                    offerToReceiveVideo: false,
-                    voiceActivityDetection: false  // Disable VAD for continuous audio
-                });
-                
-                console.log('Offer created:', offer.type);
-                await peerConnection.setLocalDescription(offer);
-                
-                socket.emit('offer', {
-                    to: listenerId,
-                    offer: offer
-                });
-                console.log('Offer sent to listener');
-            } catch (error) {
-                console.error('Error creating offer:', error);
-            }
-
-            updateListenerCount();
-        });
-
-        socket.on('answer', async ({ from, answer }) => {
-            const peerConnection = peerConnections.get(from);
-            if (peerConnection) {
-                await peerConnection.setRemoteDescription(answer);
-            }
-        });
-
-        socket.on('ice-candidate', ({ from, candidate }) => {
-            const peerConnection = peerConnections.get(from);
-            if (peerConnection) {
-                peerConnection.addIceCandidate(candidate);
-            }
-        });
-
-        function updateListenerCount() {
-            document.getElementById('listeners').textContent = 
-                `👥 Listeners: ${peerConnections.size}`;
+            return window.btoa(binary);
         }
 
         socket.on('error', (data) => {
             alert('❌ Error: ' + data.message);
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (isStreaming) {
+                stopBroadcast();
+            }
         });
     </script>
 </body>

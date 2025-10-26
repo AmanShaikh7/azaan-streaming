@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🕌 Listen to Azaan</title>
+    <title>🕌 Listen to Azaan (Server Mode)</title>
     <style>
         * {
             margin: 0;
@@ -33,8 +33,15 @@
         h1 {
             text-align: center;
             color: #333;
-            margin-bottom: 30px;
+            margin-bottom: 10px;
             font-size: 28px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
         }
         
         .input-group {
@@ -118,52 +125,35 @@
             color: #555;
         }
         
-        .audio-box {
-            background: #1f2937;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            display: none;
-        }
-        
-        .audio-box.active {
-            display: block;
-        }
-        
-        audio {
-            width: 100%;
-            margin-top: 10px;
-            height: 54px;
-        }
-        
-        /* Make audio controls more visible on mobile */
-        audio::-webkit-media-controls-panel {
-            background-color: #374151;
-        }
-        
-        .manual-play-btn {
-            display: none;
-            width: 100%;
-            padding: 20px;
+        .live-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
             background: #10b981;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: 600;
-            margin-top: 10px;
-            cursor: pointer;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
         }
         
-        .manual-play-btn.show {
-            display: block;
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .info-box {
+            background: #dbeafe;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #1e40af;
         }
         
         .wave-animation {
             display: flex;
             justify-content: center;
             gap: 4px;
-            margin-top: 10px;
+            margin: 20px 0;
         }
         
         .bar {
@@ -183,35 +173,12 @@
             0%, 100% { height: 20px; }
             50% { height: 40px; }
         }
-        
-        .info-box {
-            background: #dbeafe;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 20px;
-            font-size: 14px;
-            color: #1e40af;
-        }
-        
-        .live-dot {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            background: #10b981;
-            border-radius: 50%;
-            margin-right: 6px;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🕌 Listen to Azaan</h1>
+        <div class="subtitle">Server-Based Mode (Works on all networks)</div>
         
         <div class="input-group">
             <label for="masjidId">Enter Masjid ID</label>
@@ -231,111 +198,35 @@
             <div class="status-text" id="status">
                 ⚪ Not Connected
             </div>
-        </div>
-        
-        <div class="audio-box" id="audioBox">
-            <div style="text-align: center; color: white; margin-bottom: 10px;">
-                <span class="live-dot"></span>
-                <strong>Playing Live Audio</strong>
-            </div>
-            <div class="wave-animation" id="waveAnimation">
+            <div class="wave-animation" id="waveAnimation" style="display: none;">
                 <div class="bar"></div>
                 <div class="bar"></div>
                 <div class="bar"></div>
                 <div class="bar"></div>
                 <div class="bar"></div>
-            </div>
-            <audio id="audioPlayer" controls autoplay playsinline preload="auto"></audio>
-            <button class="manual-play-btn" id="manualPlayBtn" onclick="manualPlay()">
-                🔊 TAP HERE TO PLAY AUDIO
-            </button>
-            <div style="text-align: center; color: white; font-size: 12px; margin-top: 10px;">
-                <div id="audioStatus">Waiting for audio...</div>
             </div>
         </div>
         
         <div class="info-box">
-            💡 <strong>Tip:</strong> Use headphones for better audio quality. Make sure your device volume is up!
-        </div>
-        
-        <div style="margin-top: 20px; padding: 15px; background: #f3f4f6; border-radius: 8px; font-size: 12px; font-family: monospace;">
-            <strong>Debug Info:</strong>
-            <div id="debugInfo">Ready to connect...</div>
+            💡 <strong>Tip:</strong> Increase your device volume for better audio quality!
         </div>
     </div>
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
-        const debugLog = (msg) => {
-            console.log(msg);
-            const debugDiv = document.getElementById('debugInfo');
-            debugDiv.innerHTML += '<br>' + new Date().toLocaleTimeString() + ': ' + msg;
-            debugDiv.scrollTop = debugDiv.scrollHeight;
-        };
-        const SERVER_URL = window.location.origin;  // Auto-detect server URL
-        console.log('Connecting to:', SERVER_URL);
-        
+        const SERVER_URL = window.location.origin;
         const socket = io(SERVER_URL, {
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionAttempts: 5
+            transports: ['websocket', 'polling']
         });
         
-        let peerConnection;
+        let audioContext;
         let masjidId;
-
-        const configuration = {
-            iceServers: [
-                // Try relay-only for mobile
-                {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:relay1.expressturn.com:3478',
-                    username: 'efNK6RMY8KWT7MA1HD',
-                    credential: 'EBv0co5HRkqRX5R3yoXd27ks'
-                },
-                // STUN as backup
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ],
-            iceCandidatePoolSize: 20,  // Increased for more candidates
-            iceTransportPolicy: 'all',  // Try all types
-            bundlePolicy: 'max-bundle',
-            rtcpMuxPolicy: 'require',
-            // Add these for better mobile compatibility
-            sdpSemantics: 'unified-plan'
-        };
+        let isListening = false;
+        let audioQueue = [];
+        let isPlaying = false;
 
         socket.on('connect', () => {
-            console.log('✅ Connected to server successfully!');
-            console.log('Socket ID:', socket.id);
-            debugLog('✅ Connected to server: ' + socket.id);
-        });
-
-        socket.on('connect_error', (error) => {
-            console.error('❌ Connection error:', error);
-            document.getElementById('status').textContent = '❌ Connection Error: ' + error.message;
-            debugLog('❌ Connection error: ' + error.message);
-        });
-
-        socket.on('disconnect', (reason) => {
-            console.log('Disconnected:', reason);
-            document.getElementById('status').textContent = '⚠️ Disconnected: ' + reason;
-            debugLog('⚠️ Disconnected: ' + reason);
+            console.log('✅ Connected to server');
         });
 
         async function joinBroadcast() {
@@ -346,191 +237,135 @@
                 return;
             }
 
-            console.log('Attempting to join broadcast:', masjidId);
-            document.getElementById('status').textContent = '🔄 Connecting...';
-            document.getElementById('joinBtn').disabled = true;
-            debugLog('🔄 Joining broadcast: ' + masjidId);
-            
-            peerConnection = new RTCPeerConnection(configuration);
-
-            // Debug: Log connection state changes
-            peerConnection.onconnectionstatechange = () => {
-                console.log('🔗 Connection state:', peerConnection.connectionState);
-                debugLog('🔗 Connection state: ' + peerConnection.connectionState);
-                if (peerConnection.connectionState === 'connected') {
-                    console.log('✅ WebRTC connection established!');
-                    debugLog('✅ WebRTC connected!');
-                }
-            };
-
-            peerConnection.oniceconnectionstatechange = () => {
-                console.log('🧊 ICE connection state:', peerConnection.iceConnectionState);
-                debugLog('🧊 ICE state: ' + peerConnection.iceConnectionState);
-            };
-
-            peerConnection.ontrack = async (event) => {
-                console.log('🎵 Received audio track!');
-                console.log('Stream:', event.streams[0]);
-                console.log('Tracks:', event.streams[0].getTracks());
-                debugLog('🎵 Audio track received!');
+            try {
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 16000
+                });
                 
-                const audioPlayer = document.getElementById('audioPlayer');
-                audioPlayer.srcObject = event.streams[0];
+                // Resume audio context (required for mobile browsers)
+                await audioContext.resume();
                 
-                // Show audio box immediately
-                document.getElementById('audioBox').classList.add('active');
-                debugLog('📦 Audio player shown');
+                console.log('✅ Audio context created');
+
+                document.getElementById('status').innerHTML = '🔄 Connecting...';
+                document.getElementById('joinBtn').disabled = true;
                 
-                // Critical for mobile: Try to play and handle errors
-                try {
-                    // Set volume to maximum
-                    audioPlayer.volume = 1.0;
-                    
-                    console.log('🔊 Attempting to play audio...');
-                    debugLog('🔊 Attempting autoplay...');
-                    await audioPlayer.play();
-                    console.log('✅ Audio playback started successfully');
-                    debugLog('✅ Audio playing!');
-                    
-                    document.getElementById('status').innerHTML = 
-                        '<span class="live-dot"></span>🔊 Connected - Playing Live';
-                    document.getElementById('leaveBtn').disabled = false;
-                } catch (error) {
-                    console.error('❌ Autoplay prevented:', error);
-                    debugLog('⚠️ Autoplay blocked - tap play button');
-                    
-                    // Show manual play button
-                    document.getElementById('status').innerHTML = 
-                        '⚠️ Tap "Play Audio" button below';
-                    document.getElementById('manualPlayBtn').classList.add('show');
-                    document.getElementById('leaveBtn').disabled = false;
-                }
-            };
+                isListening = true;
 
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.emit('ice-candidate', {
-                        to: null,
-                        candidate: event.candidate
-                    });
-                }
-            };
+                // Join the broadcast room
+                socket.emit('join-broadcast', { masjidId });
 
-            peerConnection.onconnectionstatechange = () => {
-                console.log('Connection state:', peerConnection.connectionState);
-                if (peerConnection.connectionState === 'failed') {
-                    document.getElementById('status').textContent = 
-                        '❌ Connection Failed';
-                }
-            };
-
-            socket.emit('join-broadcast', { masjidId });
+            } catch (error) {
+                console.error('Error setting up audio:', error);
+                alert('❌ Could not initialize audio: ' + error.message);
+            }
         }
 
-        socket.on('offer', async ({ from, offer }) => {
-            console.log('Received offer from broadcaster');
-            
-            await peerConnection.setRemoteDescription(offer);
-            
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            
-            socket.emit('answer', {
-                to: from,
-                answer: answer
-            });
-        });
-
-        socket.on('ice-candidate', ({ from, candidate }) => {
-            if (peerConnection && candidate) {
-                peerConnection.addIceCandidate(candidate);
+        socket.on('joined-broadcast', (data) => {
+            if (data.success) {
+                console.log('✅ Joined broadcast:', data.masjidId);
+                document.getElementById('status').innerHTML = 
+                    '<span class="live-dot"></span>🔊 Connected - Listening Live';
+                document.getElementById('leaveBtn').disabled = false;
+                document.getElementById('waveAnimation').style.display = 'flex';
             }
         });
 
+        socket.on('audio-stream', async (data) => {
+            if (!isListening || !audioContext) return;
+            
+            try {
+                // Decode base64 audio data
+                const audioData = base64ToArrayBuffer(data.audio);
+                const int16Array = new Int16Array(audioData);
+                
+                // Convert Int16 to Float32
+                const float32Array = new Float32Array(int16Array.length);
+                for (let i = 0; i < int16Array.length; i++) {
+                    float32Array[i] = int16Array[i] / (int16Array[i] < 0 ? 0x8000 : 0x7FFF);
+                }
+                
+                // Create audio buffer
+                const audioBuffer = audioContext.createBuffer(1, float32Array.length, 16000);
+                audioBuffer.getChannelData(0).set(float32Array);
+                
+                // Add to queue
+                audioQueue.push(audioBuffer);
+                
+                // Start playing if not already playing
+                if (!isPlaying) {
+                    playNextChunk();
+                }
+                
+            } catch (error) {
+                console.error('Error processing audio:', error);
+            }
+        });
+
+        function playNextChunk() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                return;
+            }
+            
+            isPlaying = true;
+            const audioBuffer = audioQueue.shift();
+            
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            
+            source.onended = () => {
+                playNextChunk();
+            };
+            
+            source.start(0);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function leaveBroadcast() {
+            isListening = false;
+            audioQueue = [];
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            socket.emit('leave-broadcast', { masjidId });
+            
+            document.getElementById('status').textContent = '⚪ Not Connected';
+            document.getElementById('waveAnimation').style.display = 'none';
+            document.getElementById('joinBtn').disabled = false;
+            document.getElementById('leaveBtn').disabled = true;
+        }
+
         socket.on('broadcast-stopped', () => {
-            document.getElementById('status').textContent = 
-                '⚪ Broadcast Ended';
+            document.getElementById('status').textContent = '⚪ Broadcast Ended';
             leaveBroadcast();
         });
 
         socket.on('error', (data) => {
             alert('❌ Error: ' + data.message);
             document.getElementById('status').textContent = '❌ ' + data.message;
-            document.getElementById('joinBtn').disabled = false;
         });
 
-        function leaveBroadcast() {
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (isListening) {
+                leaveBroadcast();
             }
-            
-            const audioPlayer = document.getElementById('audioPlayer');
-            audioPlayer.srcObject = null;
-            
-            document.getElementById('status').textContent = '⚪ Not Connected';
-            document.getElementById('audioBox').classList.remove('active');
-            document.getElementById('manualPlayBtn').classList.remove('show');
-            document.getElementById('joinBtn').disabled = false;
-            document.getElementById('leaveBtn').disabled = true;
-            
-            if (masjidId) {
-                socket.emit('leave-broadcast', { masjidId });
-            }
-        }
-
-        // Manual play function for mobile
-        async function manualPlay() {
-            const audioPlayer = document.getElementById('audioPlayer');
-            try {
-                audioPlayer.volume = 1.0;
-                audioPlayer.muted = false;
-                
-                console.log('Manual play - readyState:', audioPlayer.readyState);
-                debugLog('🎯 Manual play attempt');
-                
-                await audioPlayer.play();
-                console.log('✅ Manual play successful');
-                debugLog('✅ Manual play successful!');
-                
-                document.getElementById('manualPlayBtn').classList.remove('show');
-                document.getElementById('status').innerHTML = 
-                    '<span class="live-dot"></span>🔊 Connected - Playing Live';
-                document.getElementById('audioStatus').textContent = 
-                    'Audio playing - paused: ' + audioPlayer.paused;
-            } catch (error) {
-                console.error('Manual play failed:', error);
-                debugLog('❌ Manual play failed: ' + error.message);
-                alert('⚠️ Unable to play audio: ' + error.message);
-            }
-        }
-
-        // Monitor audio playback
-        const audioPlayer = document.getElementById('audioPlayer');
-        
-        audioPlayer.onplay = () => {
-            console.log('Audio play event fired');
-            debugLog('▶️ Audio play event');
-            document.getElementById('audioStatus').textContent = 'Playing...';
-        };
-        
-        audioPlayer.onpause = () => {
-            console.log('Audio pause event fired');
-            debugLog('⏸️ Audio pause event');
-            document.getElementById('audioStatus').textContent = 'Paused';
-        };
-        
-        audioPlayer.onplaying = () => {
-            console.log('Audio playing event fired');
-            debugLog('▶️ Audio playing event');
-            document.getElementById('audioStatus').textContent = 'Playing now!';
-        };
-        
-        audioPlayer.onerror = (e) => {
-            console.error('Audio error:', e, audioPlayer.error);
-            debugLog('❌ Audio error: ' + (audioPlayer.error ? audioPlayer.error.message : 'unknown'));
-            document.getElementById('audioStatus').textContent = 'Error: ' + (audioPlayer.error ? audioPlayer.error.message : 'unknown');
-        };
+        });
     </script>
 </body>
 </html>
